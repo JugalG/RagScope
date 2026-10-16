@@ -119,3 +119,51 @@ def test_api_upload_and_chat(rec):
     hist = client.get(f"/api/sessions/{body['session_id']}").json()
     assert [m["role"] for m in hist["messages"]] == ["human", "ai"]
     assert client.get("/").status_code == 200
+
+
+def _read_events(response) -> list[dict]:
+    import json
+
+    return [json.loads(line[6:]) for line in response.iter_lines() if line.startswith("data: ")]
+
+
+def test_stream_endpoints_send_trace_events(rec):
+    import server
+
+    server.sessions = SessionStore()
+    client = TestClient(server.app)
+    with client.stream("POST", "/api/upload/stream",
+                       files={"file": ("error_codes.md", (SAMPLE / "error_codes.md").read_bytes())}) as r:
+        events = _read_events(r)
+    assert events[-1]["type"] == "result" and events[-1]["data"]["chunks"] > 0
+    assert any(e["type"] == "vector" and e["dims"] > 0 for e in events)
+
+    with client.stream("POST", "/api/chat/stream", json={"question": "What does ERR-4012 mean?", "mode": "hybrid"}) as r:
+        events = _read_events(r)
+    steps = [e["number"] for e in events if e["type"] == "step"]
+    assert steps == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+    tables = [e["title"] for e in events if e["type"] == "table"]
+    assert any(t.startswith("RRF fusion") for t in tables)
+    assert all("t_ms" in e for e in events[:-1])
+    final = events[-1]
+    assert final["type"] == "result" and final["data"]["citations"]
+    # rich styling tags must not leak into the web events
+    assert not any("[/]" in str(e) for e in events)
+
+
+def test_stream_reports_errors(rec, monkeypatch):
+    import server
+    from rag import llm
+
+    server.sessions = SessionStore()
+    ingest.ingest_folder(SAMPLE)
+
+    def broken(schema):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(llm, "answer_structured", broken)
+    client = TestClient(server.app)
+    with client.stream("POST", "/api/chat/stream", json={"question": "annual plan refund"}) as r:
+        events = _read_events(r)
+    assert events[-1]["type"] == "error"
+    assert any(e["type"] == "warn" and "provider down" in e["text"] for e in events)

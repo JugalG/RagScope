@@ -44,7 +44,7 @@ def check(answer: Answer, labeled: dict[str, dict]) -> tuple[Answer, list[dict],
             ]
         )
     except Exception as exc:
-        trace.warn(f"Grounding check unavailable ({type(exc).__name__}); keeping claims unverified.")
+        trace.warn(f"Grounding check unavailable ({type(exc).__name__}: {exc}); keeping claims unverified.")
         return answer, [], "unverified"
 
     by_number = {v.claim_number: v for v in result.verdicts}

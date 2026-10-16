@@ -68,7 +68,7 @@ class Session:
                 ]
             )
         except Exception as exc:
-            trace.warn(f"Summarising failed ({type(exc).__name__}); history left as is.")
+            trace.warn(f"Summarising failed ({type(exc).__name__}: {exc}); history left as is.")
             return
         self.summary = str(reply.content).strip()
         self.messages = keep

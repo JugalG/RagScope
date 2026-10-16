@@ -36,7 +36,7 @@ def rewrite(question: str, summary: str, recent: list[BaseMessage]) -> str:
         result = llm.cheap_structured(RewrittenQuery).invoke(prompt)
         query = result.search_query.strip() or question
     except Exception as exc:  # rewriting is an optimisation; never fail the request over it
-        trace.warn(f"Rewrite failed ({type(exc).__name__}); using the original question.")
+        trace.warn(f"Rewrite failed ({type(exc).__name__}: {exc}); using the original question.")
         query = question
     trace.info(f"original : {trace.short(question, 300)}")
     trace.info(f"rewritten: [bold]{trace.short(query, 300)}[/]  [dim](model: {config.CHEAP_MODEL})[/]")

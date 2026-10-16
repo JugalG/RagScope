@@ -5,34 +5,82 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Simple RAG Chat</title>
 <style>
-  :root { --bg:#f6f5f2; --panel:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e3e1db;
-          --user:#1f3a5f; --accent:#2f6f4f; --warn:#9a5b13; --bad:#a33a2b; }
+  :root {
+    --bg:#f5f4f0; --panel:#ffffff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e2e0d9;
+    --user:#1f3a5f; --ok:#2f6f4f; --warn:#9a5b13; --bad:#a33a2b; --accent:#3b5bdb;
+    --code-bg:#f8f7f4; --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#151514; --panel:#1f1f1d; --ink:#ecebe6; --muted:#a09f99; --line:#34332f;
+            --user:#2d4d78; --ok:#5fae84; --warn:#d69a4a; --bad:#e07563; --accent:#8ea2ff; --code-bg:#191918; }
+  }
   * { box-sizing: border-box; }
+  html, body { height: 100%; }
   body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink);
-         display:flex; flex-direction:column; height:100vh; }
-  header { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 16px;
+         display:flex; flex-direction:column; }
+  header { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:10px 16px;
            background:var(--panel); border-bottom:1px solid var(--line); }
   header h1 { font-size:16px; margin:0 auto 0 0; }
-  header small { color:var(--muted); }
-  button, select { font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:6px;
-                   background:#fff; cursor:pointer; }
-  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px;
-         max-width:860px; width:100%; margin:0 auto; }
-  .msg { padding:10px 14px; border-radius:10px; max-width:85%; white-space:pre-wrap; }
+  header small { color:var(--muted); font-weight:normal; }
+  button, select { font:inherit; font-size:14px; padding:5px 10px; border:1px solid var(--line);
+                   border-radius:6px; background:var(--panel); color:var(--ink); cursor:pointer; }
+  #status { font-size:12px; color:var(--muted); width:100%; }
+
+  main { flex:1; min-height:0; display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 45vh; } }
+
+  /* Chat */
+  .chat { display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--line); }
+  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .msg { padding:10px 14px; border-radius:10px; max-width:88%; white-space:pre-wrap; overflow-wrap:anywhere; }
   .user { align-self:flex-end; background:var(--user); color:#fff; }
   .bot { align-self:flex-start; background:var(--panel); border:1px solid var(--line); }
   .meta { font-size:12px; color:var(--muted); margin-top:6px; white-space:normal; }
   .badge { display:inline-block; font-size:11px; padding:1px 7px; border-radius:10px; margin-right:6px;
-           color:#fff; background:var(--accent); }
+           color:#fff; background:var(--ok); }
   .badge.partially_grounded, .badge.unverified { background:var(--warn); }
-  .badge.abstained { background:var(--bad); }
-  details { margin-top:6px; font-size:13px; white-space:normal; }
-  details li { margin-bottom:6px; }
+  .badge.abstained, .badge.error { background:var(--bad); }
+  details.sources { margin-top:6px; font-size:13px; white-space:normal; }
+  details.sources li { margin-bottom:6px; }
   form { display:flex; gap:8px; padding:12px 16px; background:var(--panel); border-top:1px solid var(--line); }
   form textarea { flex:1; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px;
-                  resize:none; height:44px; }
-  form button { background:var(--ink); color:#fff; border:none; }
-  #status { font-size:12px; color:var(--muted); }
+                  resize:none; height:44px; background:var(--panel); color:var(--ink); }
+  form button { background:var(--ink); color:var(--bg); border:none; }
+
+  /* Trace */
+  .trace { display:flex; flex-direction:column; min-height:0; background:var(--code-bg); }
+  .trace-bar { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line);
+               background:var(--panel); font-size:13px; }
+  .trace-bar b { margin-right:auto; }
+  .live { width:8px; height:8px; border-radius:50%; background:var(--muted); display:inline-block; margin-right:6px; }
+  .live.on { background:var(--ok); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.3; } }
+  #trace { flex:1; overflow-y:auto; padding:10px 12px; font-size:13px; }
+  .empty { color:var(--muted); padding:20px 4px; }
+  .run-title { margin:14px 0 6px; padding:4px 8px; border-left:3px solid var(--accent);
+               font-weight:600; font-size:13px; }
+  details.step { margin:4px 0; border:1px solid var(--line); border-radius:6px; background:var(--panel); }
+  details.step > summary { cursor:pointer; padding:5px 8px; display:flex; gap:8px; align-items:baseline; }
+  .num { font-family:var(--mono); font-size:11px; color:var(--warn); font-weight:700; white-space:nowrap; }
+  .dur { margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--muted); white-space:nowrap; }
+  .step-body { padding:4px 10px 8px; }
+  .line { font-family:var(--mono); font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; margin:2px 0; }
+  .line.warn { color:var(--bad); }
+  .tbl-title { font-size:12px; color:var(--muted); margin:6px 0 2px; }
+  .tbl-wrap { overflow-x:auto; }
+  table { border-collapse:collapse; font-size:12px; width:100%; }
+  th, td { text-align:left; padding:3px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-weight:600; color:var(--muted); white-space:nowrap; }
+  td.num-cell { font-family:var(--mono); white-space:nowrap; }
+  td.yes { color:var(--ok); font-weight:600; }
+  td.no { color:var(--bad); font-weight:600; }
+  .bars { display:flex; align-items:center; gap:1px; height:40px; margin:4px 0; }
+  .bars span { flex:1; display:block; }
+  .box { border:1px solid var(--ok); border-radius:6px; padding:6px 10px; margin:6px 0; }
+  .box.red { border-color:var(--bad); }
+  .box.magenta { border-color:var(--accent); }
+  .box-title { font-size:11px; color:var(--muted); }
+  .box-text { white-space:pre-wrap; overflow-wrap:anywhere; }
 </style>
 </head>
 <body>
@@ -42,35 +90,49 @@
     <option value="hybrid">Hybrid search</option>
     <option value="dense">Similarity only</option>
   </select>
-  <label><button type="button" onclick="document.getElementById('file').click()">Upload file</button></label>
+  <button type="button" id="uploadBtn">Upload file</button>
   <input id="file" type="file" accept=".pdf,.txt,.md" hidden>
   <button id="newchat" type="button">New chat</button>
   <span id="status"></span>
 </header>
 
-<div id="log"></div>
+<main>
+  <section class="chat">
+    <div id="log"></div>
+    <form id="ask">
+      <textarea id="q" placeholder="Ask about your documents… (Enter to send, Shift+Enter for a new line)"></textarea>
+      <button>Send</button>
+    </form>
+  </section>
 
-<form id="ask">
-  <textarea id="q" placeholder="Ask about your documents... (Enter to send, Shift+Enter for a new line)"></textarea>
-  <button>Send</button>
-</form>
+  <section class="trace" aria-label="Pipeline trace">
+    <div class="trace-bar">
+      <b><span id="live" class="live"></span>Pipeline trace</b>
+      <label><input type="checkbox" id="follow" checked> follow</label>
+      <button type="button" id="clearTrace">Clear</button>
+    </div>
+    <div id="trace"><div class="empty">Ask a question or upload a file to watch each step happen here: query rewrite, embedding, similarity and keyword search, RRF, relevance gate, reranking, answer, grounding check and citations.</div></div>
+  </section>
+</main>
 
 <script>
-const log = document.getElementById("log");
-const statusEl = document.getElementById("status");
+const $ = (id) => document.getElementById(id);
+const log = $("log"), traceEl = $("trace"), statusEl = $("status");
 let sessionId = null;
+let busy = false;
 try { sessionId = localStorage.getItem("rag_session"); } catch (e) {}
 
-function esc(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; }
 function setSession(id) {
   sessionId = id;
-  document.getElementById("sid").textContent = id ? "session " + id : "";
+  $("sid").textContent = id ? "session " + id : "";
   try { id ? localStorage.setItem("rag_session", id) : localStorage.removeItem("rag_session"); } catch (e) {}
 }
+
+/* ---------- Chat ---------- */
 function add(role, html) {
-  const div = document.createElement("div");
-  div.className = "msg " + role;
-  div.innerHTML = html;
+  const div = el("div", "msg " + role, html);
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
   return div;
@@ -82,7 +144,7 @@ function renderAnswer(r) {
   html += `<div class="meta"><span class="badge ${esc(label)}">${esc(label.replace("_", " "))}</span>`
        + `searched for: “${esc(r.rewritten_query || "")}” · ${r.latency_ms} ms</div>`;
   if (r.citations && r.citations.length) {
-    html += "<details><summary>Sources (" + r.citations.length + ")</summary><ul>"
+    html += `<details class="sources"><summary>Sources (${r.citations.length})</summary><ul>`
          + r.citations.map(c => `<li><b>[${esc(c.label)}]</b> ${esc(c.source)}, page ${esc(c.page)}<br>`
          + `<span class="meta">${esc(c.excerpt)}…</span></li>`).join("") + "</ul></details>";
   }
@@ -99,49 +161,192 @@ async function loadHistory() {
   for (const m of data.messages) add(m.role === "human" ? "user" : "bot", esc(m.content));
 }
 
-document.getElementById("ask").addEventListener("submit", async (e) => {
+/* ---------- Trace panel ---------- */
+let currentBody = null;      // where the next events go (inside the current step)
+let currentStep = null;      // {summary element, start ms}
+let lastT = 0;               // time of the latest event, in ms since the request started
+
+function scrollTrace() { if ($("follow").checked) traceEl.scrollTop = traceEl.scrollHeight; }
+
+function closeStep(endMs) {
+  if (endMs === undefined) endMs = lastT;
+  if (currentStep) {
+    currentStep.dur.textContent = (endMs - currentStep.start) + " ms";
+    currentStep = null;
+  }
+}
+
+function target() {
+  if (!currentBody) { currentBody = el("div", "step-body"); traceEl.appendChild(currentBody); }
+  return currentBody;
+}
+
+function cellClass(v) {
+  const s = String(v).trim().toLowerCase();
+  if (s === "yes") return "yes";
+  if (s === "no") return "no";
+  if (/^[+-]?\d+(\.\d+)?$/.test(s) || s === "-") return "num-cell";
+  return "";
+}
+
+function vectorBars(values) {
+  const max = Math.max(...values.map(Math.abs), 1e-9);
+  return '<div class="bars" title="first values of the vector; up = positive, down = negative">'
+    + values.map(v => {
+        const h = Math.max(1, Math.round(Math.abs(v) / max * 19));
+        const color = v >= 0 ? "var(--accent)" : "var(--warn)";
+        return `<span style="height:${h}px;background:${color};align-self:${v >= 0 ? "flex-end" : "flex-start"};${v >= 0 ? "margin-bottom:20px" : "margin-top:20px"}"></span>`;
+      }).join("") + "</div>";
+}
+
+function onEvent(ev) {
+  const empty = traceEl.querySelector(".empty");
+  if (empty) empty.remove();
+  if (typeof ev.t_ms === "number") lastT = ev.t_ms;
+  switch (ev.type) {
+    case "header":
+      closeStep(ev.t_ms);
+      traceEl.appendChild(el("div", "run-title", esc(ev.title)));
+      currentBody = null;
+      break;
+    case "step": {
+      closeStep(ev.t_ms);
+      const d = el("details", "step");
+      d.open = true;
+      const sum = el("summary", "", `<span class="num">STEP ${esc(ev.number)}</span><span>${esc(ev.title)}</span>`);
+      const dur = el("span", "dur", "…");
+      sum.appendChild(dur);
+      d.appendChild(sum);
+      currentBody = el("div", "step-body");
+      d.appendChild(currentBody);
+      traceEl.appendChild(d);
+      currentStep = {dur, start: ev.t_ms};
+      setPending(`Step ${ev.number}: ${ev.title}`);
+      break;
+    }
+    case "info":
+      target().appendChild(el("div", "line", esc(ev.text)));
+      break;
+    case "warn":
+      target().appendChild(el("div", "line warn", "! " + esc(ev.text)));
+      break;
+    case "vector":
+      target().appendChild(el("div", "line",
+        `${esc(ev.name)}: ${ev.dims} numbers, length (norm) = ${Number(ev.norm).toFixed(3)}<br>`
+        + `first ${Math.min(8, ev.values.length)}: [${ev.values.slice(0, 8).map(v => (v >= 0 ? "+" : "") + v.toFixed(4)).join(", ")}, …]`));
+      target().insertAdjacentHTML("beforeend", vectorBars(ev.values));
+      break;
+    case "table": {
+      const wrap = el("div");
+      wrap.appendChild(el("div", "tbl-title", esc(ev.title)));
+      const html = "<table><thead><tr>" + ev.columns.map(c => `<th>${esc(c)}</th>`).join("") + "</tr></thead><tbody>"
+        + (ev.rows.length ? ev.rows.map(r => "<tr>" + r.map(v => `<td class="${cellClass(v)}">${esc(v)}</td>`).join("") + "</tr>").join("")
+                          : `<tr><td colspan="${ev.columns.length}">(no results)</td></tr>`)
+        + "</tbody></table>";
+      wrap.appendChild(el("div", "tbl-wrap", html));
+      target().appendChild(wrap);
+      break;
+    }
+    case "panel":
+      target().appendChild(el("div", "box " + esc(ev.style),
+        `<div class="box-title">${esc(ev.title)}</div><div class="box-text">${esc(ev.text)}</div>`));
+      break;
+    case "result":
+    case "error":
+      closeStep(ev.t_ms);
+      break;
+  }
+  scrollTrace();
+}
+
+/* Read a Server-Sent Events stream from a fetch() response, calling onEvent per event. */
+async function readEvents(res, handle) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, {stream: true});
+    let cut;
+    while ((cut = buffer.indexOf("\n\n")) >= 0) {
+      const chunk = buffer.slice(0, cut);
+      buffer = buffer.slice(cut + 2);
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("data: ")) handle(JSON.parse(line.slice(6)));
+      }
+    }
+  }
+}
+
+let pendingEl = null;
+function setPending(text) { if (pendingEl) pendingEl.innerHTML = `<span class="meta">Working… ${esc(text)}</span>`; }
+function setLive(on) { busy = on; $("live").classList.toggle("on", on); }
+
+async function streamRequest(url, options, onDone) {
+  setLive(true);
+  let final = null;
+  try {
+    const res = await fetch(url, options);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || res.statusText);
+    }
+    await readEvents(res, (ev) => {
+      onEvent(ev);
+      if (ev.type === "result" || ev.type === "error") final = ev;
+    });
+    if (!final) throw new Error("The stream ended without a result.");
+    if (final.type === "error") throw new Error(final.message);
+    onDone(final.data, null);
+  } catch (err) {
+    onDone(null, err);
+  } finally {
+    setLive(false);
+    currentBody = null;
+  }
+}
+
+/* ---------- Actions ---------- */
+$("ask").addEventListener("submit", (e) => {
   e.preventDefault();
-  const q = document.getElementById("q");
+  if (busy) return;
+  const q = $("q");
   const question = q.value.trim();
   if (!question) return;
   q.value = "";
   add("user", esc(question));
-  const pending = add("bot", '<span class="meta">Thinking… (watch the server terminal for each step)</span>');
-  try {
-    const res = await fetch("/api/chat", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({question, session_id: sessionId, mode: document.getElementById("mode").value}),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || res.statusText);
-    setSession(data.session_id);
-    pending.innerHTML = renderAnswer(data);
-  } catch (err) {
-    pending.innerHTML = `<span class="badge abstained">error</span>${esc(err.message)}`;
-  }
+  pendingEl = add("bot", '<span class="meta">Working…</span>');
+  streamRequest("/api/chat/stream", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({question, session_id: sessionId, mode: $("mode").value}),
+  }, (data, err) => {
+    if (err) pendingEl.innerHTML = `<span class="badge error">error</span>${esc(err.message)}`;
+    else { setSession(data.session_id); pendingEl.innerHTML = renderAnswer(data); }
+    pendingEl = null;
+    log.scrollTop = log.scrollHeight;
+  });
 });
 
-document.getElementById("q").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); document.getElementById("ask").requestSubmit(); }
+$("q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("ask").requestSubmit(); }
 });
 
-document.getElementById("newchat").addEventListener("click", () => { setSession(null); log.innerHTML = ""; });
+$("newchat").addEventListener("click", () => { setSession(null); log.innerHTML = ""; });
+$("clearTrace").addEventListener("click", () => { traceEl.innerHTML = ""; currentBody = null; currentStep = null; });
+$("uploadBtn").addEventListener("click", () => $("file").click());
 
-document.getElementById("file").addEventListener("change", async (e) => {
+$("file").addEventListener("change", (e) => {
   const file = e.target.files[0];
-  if (!file) return;
+  e.target.value = "";
+  if (!file || busy) return;
   statusEl.textContent = "Ingesting " + file.name + "…";
   const form = new FormData();
   form.append("file", file);
-  try {
-    const res = await fetch("/api/upload", {method: "POST", body: form});
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || res.statusText);
-    statusEl.textContent = `${data.source}: ${data.chunks} chunks indexed`;
-  } catch (err) {
-    statusEl.textContent = "Upload failed: " + err.message;
-  }
-  e.target.value = "";
+  streamRequest("/api/upload/stream", {method: "POST", body: form}, (data, err) => {
+    statusEl.textContent = err ? "Upload failed: " + err.message : `${data.source}: ${data.chunks} chunks indexed`;
+  });
 });
 
 loadHistory();

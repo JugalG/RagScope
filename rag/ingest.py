@@ -60,7 +60,7 @@ def ingest_file(path: Path) -> dict:
     chunks = split(pages)
     trace.info(f"{len(chunks)} chunk(s). First chunk:")
     trace.info(f"[dim]{trace.short(chunks[0].page_content, 200)}[/]")
-
+ 
     trace.step(3, f"Embed every chunk with {config.EMBEDDING_MODEL}")
     texts = [c.page_content for c in chunks]
     vectors: list[list[float]] = []
