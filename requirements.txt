@@ -1,0 +1,19 @@
+# Core
+langchain-core>=1.0
+langchain-openai>=1.0
+langchain-chroma>=1.0
+langchain-text-splitters>=1.0
+rank-bm25>=0.2.2
+pypdf>=5.0
+numpy
+# Web + terminal
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+rich>=13
+python-dotenv>=1.0
+# Optional local reranker (RERANKER=flashrank). Remove if it fails to install; use RERANKER=llm or none.
+flashrank>=0.2.10
+# Tests
+pytest>=8
+httpx>=0.27

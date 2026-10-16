@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simple RAG Chat</title>
+<style>
+  :root { --bg:#f6f5f2; --panel:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e3e1db;
+          --user:#1f3a5f; --accent:#2f6f4f; --warn:#9a5b13; --bad:#a33a2b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui, sans-serif; background:var(--bg); color:var(--ink);
+         display:flex; flex-direction:column; height:100vh; }
+  header { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 16px;
+           background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0 auto 0 0; }
+  header small { color:var(--muted); }
+  button, select { font:inherit; padding:6px 10px; border:1px solid var(--line); border-radius:6px;
+                   background:#fff; cursor:pointer; }
+  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px;
+         max-width:860px; width:100%; margin:0 auto; }
+  .msg { padding:10px 14px; border-radius:10px; max-width:85%; white-space:pre-wrap; }
+  .user { align-self:flex-end; background:var(--user); color:#fff; }
+  .bot { align-self:flex-start; background:var(--panel); border:1px solid var(--line); }
+  .meta { font-size:12px; color:var(--muted); margin-top:6px; white-space:normal; }
+  .badge { display:inline-block; font-size:11px; padding:1px 7px; border-radius:10px; margin-right:6px;
+           color:#fff; background:var(--accent); }
+  .badge.partially_grounded, .badge.unverified { background:var(--warn); }
+  .badge.abstained { background:var(--bad); }
+  details { margin-top:6px; font-size:13px; white-space:normal; }
+  details li { margin-bottom:6px; }
+  form { display:flex; gap:8px; padding:12px 16px; background:var(--panel); border-top:1px solid var(--line); }
+  form textarea { flex:1; font:inherit; padding:8px; border:1px solid var(--line); border-radius:6px;
+                  resize:none; height:44px; }
+  form button { background:var(--ink); color:#fff; border:none; }
+  #status { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Simple RAG Chat <small id="sid"></small></h1>
+  <select id="mode" title="Search mode">
+    <option value="hybrid">Hybrid search</option>
+    <option value="dense">Similarity only</option>
+  </select>
+  <label><button type="button" onclick="document.getElementById('file').click()">Upload file</button></label>
+  <input id="file" type="file" accept=".pdf,.txt,.md" hidden>
+  <button id="newchat" type="button">New chat</button>
+  <span id="status"></span>
+</header>
+
+<div id="log"></div>
+
+<form id="ask">
+  <textarea id="q" placeholder="Ask about your documents... (Enter to send, Shift+Enter for a new line)"></textarea>
+  <button>Send</button>
+</form>
+
+<script>
+const log = document.getElementById("log");
+const statusEl = document.getElementById("status");
+let sessionId = null;
+try { sessionId = localStorage.getItem("rag_session"); } catch (e) {}
+
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function setSession(id) {
+  sessionId = id;
+  document.getElementById("sid").textContent = id ? "session " + id : "";
+  try { id ? localStorage.setItem("rag_session", id) : localStorage.removeItem("rag_session"); } catch (e) {}
+}
+function add(role, html) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.innerHTML = html;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+function renderAnswer(r) {
+  const label = r.abstained ? "abstained" : r.grounding;
+  let html = esc(r.answer);
+  html += `<div class="meta"><span class="badge ${esc(label)}">${esc(label.replace("_", " "))}</span>`
+       + `searched for: “${esc(r.rewritten_query || "")}” · ${r.latency_ms} ms</div>`;
+  if (r.citations && r.citations.length) {
+    html += "<details><summary>Sources (" + r.citations.length + ")</summary><ul>"
+         + r.citations.map(c => `<li><b>[${esc(c.label)}]</b> ${esc(c.source)}, page ${esc(c.page)}<br>`
+         + `<span class="meta">${esc(c.excerpt)}…</span></li>`).join("") + "</ul></details>";
+  }
+  return html;
+}
+
+async function loadHistory() {
+  if (!sessionId) return;
+  const res = await fetch("/api/sessions/" + encodeURIComponent(sessionId));
+  if (!res.ok) { setSession(null); return; }
+  const data = await res.json();
+  setSession(data.session_id);
+  if (data.summary) add("bot", `<span class="meta">Earlier conversation (summarised): ${esc(data.summary)}</span>`);
+  for (const m of data.messages) add(m.role === "human" ? "user" : "bot", esc(m.content));
+}
+
+document.getElementById("ask").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = document.getElementById("q");
+  const question = q.value.trim();
+  if (!question) return;
+  q.value = "";
+  add("user", esc(question));
+  const pending = add("bot", '<span class="meta">Thinking… (watch the server terminal for each step)</span>');
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question, session_id: sessionId, mode: document.getElementById("mode").value}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    setSession(data.session_id);
+    pending.innerHTML = renderAnswer(data);
+  } catch (err) {
+    pending.innerHTML = `<span class="badge abstained">error</span>${esc(err.message)}`;
+  }
+});
+
+document.getElementById("q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); document.getElementById("ask").requestSubmit(); }
+});
+
+document.getElementById("newchat").addEventListener("click", () => { setSession(null); log.innerHTML = ""; });
+
+document.getElementById("file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  statusEl.textContent = "Ingesting " + file.name + "…";
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res = await fetch("/api/upload", {method: "POST", body: form});
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    statusEl.textContent = `${data.source}: ${data.chunks} chunks indexed`;
+  } catch (err) {
+    statusEl.textContent = "Upload failed: " + err.message;
+  }
+  e.target.value = "";
+});
+
+loadHistory();
+</script>
+</body>
+</html>

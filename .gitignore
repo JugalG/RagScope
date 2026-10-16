@@ -1,0 +1,21 @@
+# secrets
+.env
+.env.local
+backend/.env
+frontend/.env.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+
+# local data
+storage/
+backend/storage/
